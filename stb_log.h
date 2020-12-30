@@ -99,7 +99,7 @@ enum StbLogLevel {
 #else
 #define STB_LOG_LEVEL StbLogLevel
 #endif
-
+#define log_level(n) (get_log_context()->logger->set_ActiveLevel(n))
 // write log
 #define log_write(lvl, channel, fmt, ...) (get_log_context()->logger->write(lvl, channel, (fmt), ##__VA_ARGS__))
 #ifdef LOG_SEVERITY_LEVEL
@@ -585,13 +585,16 @@ public:
 	}
 
 	static size_t get_next_power2(size_t val);
-
+	void set_ActiveLevel(int n){
+		m_activeLevel=n;
+	}
 private:
 	uint64_t _claim(uint64_t count);
 	void _publish(int level, const char *channel, std::shared_ptr<void> sptr);
 
 	LogEvent *m_event_queue;
 	size_t m_size_mask;
+	int m_activeLevel;
 	std::vector<CLogHandler *> m_handler_list;
 	uint64_t m_min_seq;
 	Sequence m_seq_claim;
@@ -746,6 +749,7 @@ CLogger::CLogger(size_t size) {
 	}
 	m_seq_claim.set(0);
 	m_min_seq = 0;
+	m_activeLevel=LOG_SEVERITY_LEVEL;
 }
 
 CLogger::~CLogger() {
@@ -807,13 +811,15 @@ uint64_t CLogger::_claim(uint64_t count) {
 
 void CLogger::_publish(int level, const char *channel, std::shared_ptr<void> sptr) {
 	LogData *base = (LogData*)sptr.get();
-	base->level = level;
-	base->channel = channel;
-	base->time = std::chrono::system_clock::now();
-	auto seq = _claim(1);
-	auto *log = get_event(seq);
-	log->data = sptr;
-	log->publish.store(seq + 1);
+	if(level>=m_activeLevel) {
+		base->level = level;
+		base->channel = channel;
+		base->time = std::chrono::system_clock::now();
+		auto seq = _claim(1);
+		auto *log = get_event(seq);
+		log->data = sptr;
+		log->publish.store(seq + 1);
+	}
 }
 
 void CLogger::add_handler(CLogHandler *handler) {
