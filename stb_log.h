@@ -101,35 +101,35 @@ enum StbLogLevel {
 #endif
 #define log_level(n) (get_log_context()->logger->set_ActiveLevel(n))
 // write log
-#define log_write(lvl, channel, fmt, ...) (get_log_context()->logger->write(lvl, channel, (fmt), ##__VA_ARGS__))
+#define log_write(lvl, channel, fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(lvl, channel, (fmt), ##__VA_ARGS__))
 #ifdef LOG_SEVERITY_LEVEL
 // write critical log
 #if LOG_SEVERITY_LEVEL <= 50
-#define log_critical(fmt, ...) (get_log_context()->logger->write(STB_LOG_LEVEL::LOG_CRITICAL, "CRITICAL", (fmt), ##__VA_ARGS__))
+#define log_critical(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_CRITICAL, "CRITICAL", (fmt), ##__VA_ARGS__))
 #else
 #define log_critical(fmt,...)
 #endif
 // write error log
 #if LOG_SEVERITY_LEVEL <= 40
-#define log_error(fmt, ...) (get_log_context()->logger->write(STB_LOG_LEVEL::LOG_ERROR, "ERROR", (fmt), ##__VA_ARGS__))
+#define log_error(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_ERROR, "ERROR", (fmt), ##__VA_ARGS__))
 #else
 #define log_error(fmt,...)
 #endif
 // write warning log
 #if LOG_SEVERITY_LEVEL <= 30
-#define log_warning(fmt, ...) (get_log_context()->logger->write(STB_LOG_LEVEL::LOG_WARNING, "WARNING", (fmt), ##__VA_ARGS__))
+#define log_warning(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_WARNING, "WARNING", (fmt), ##__VA_ARGS__))
 #else
 #define log_warning(fmt,...)
 #endif
 // write info log
 #if LOG_SEVERITY_LEVEL <= 20
-#define log_info(fmt, ...) (get_log_context()->logger->write(STB_LOG_LEVEL::LOG_INFO, "INFO", (fmt), ##__VA_ARGS__))
+#define log_info(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_INFO, "INFO", (fmt), ##__VA_ARGS__))
 #else
 #define log_info(fmt,...)
 #endif
 // write debug log
 #if LOG_SEVERITY_LEVEL <= 10
-#define log_debug(fmt, ...) (get_log_context()->logger->write(STB_LOG_LEVEL::LOG_DEBUG, "DEBUG", (fmt), ##__VA_ARGS__))
+#define log_debug(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_DEBUG, "DEBUG", (fmt), ##__VA_ARGS__))
 #else
 #define log_debug(fmt,...)
 #endif
@@ -211,6 +211,23 @@ inline const uint64_t to_printable(std::thread::id tid) {
 	}
 }
 	
+template <class T>
+struct formatxform
+{
+	T v;
+};
+
+template <>
+struct formatxform<char*>
+{
+	std::string s;
+};
+template <>
+struct formatxform<wchar_t*>
+{
+	std::wstring s;
+};
+
 // --------------------------------
 // END of interface declaration
 // --------------------------------
@@ -290,7 +307,7 @@ struct GenericLogWriter {
 #pragma clang diagnostic ignored "-Wformat-security"
 
 	static void write_stdout(const LogData *log, void *context) {
-		using tuple_t = std::tuple<const char *, Args...>;
+		using tuple_t = std::tuple<const char *, formatxform<Args>...>;
 		constexpr size_t tuple_size = std::tuple_size<tuple_t>::value;
 		auto t = reinterpret_cast<const tuple_t *>((const char *) log + sizeof(LogData));
 		index_apply<tuple_size>([t](auto... Is) {
@@ -299,7 +316,7 @@ struct GenericLogWriter {
 	}
 
 	static void write_file(const LogData *log, void *context) {
-		using tuple_t = std::tuple<const char *, Args...>;
+		using tuple_t = std::tuple<const char *, formatxform<Args>...>;
 		constexpr size_t tuple_size = std::tuple_size<tuple_t>::value;
 		auto t = reinterpret_cast<const tuple_t *>((const char *) log + sizeof(LogData));
 		auto c = (std::pair<FILE*, long>*)context;
@@ -309,7 +326,7 @@ struct GenericLogWriter {
 	}
 
 	static void write_string(const LogData *log, void *context) {
-		using tuple_t = std::tuple<const char *, Args...>;
+		using tuple_t = std::tuple<const char *, formatxform<Args>...>;
 		constexpr size_t tuple_size = std::tuple_size<tuple_t>::value;
 		auto t = reinterpret_cast<const tuple_t *>((const char *) log + sizeof(LogData));
 		auto c = (std::pair<char*, size_t>*)context;
@@ -528,7 +545,12 @@ private:
 	char *m_buf;
 	size_t m_capacity;
 };
+template<class T>
+struct CLogTranser
+{
+	T v;
 
+};
 class CLogger {
 public:
 	CLogger(size_t buf_size);
@@ -544,20 +566,21 @@ public:
 	void release_handlers();
 	// send log message to handlers
 	template<class... Args>
-	void write(int level, const char *channel, const char *format, Args... args) {
-		using tuple_t = std::tuple<const char *, Args...>;
+	bool write(int level, const char *channel, const char *format, Args... args) {
+		using tuple_t = std::tuple<const char *, formatxform<Args>...>;
 		struct entry_t  {
 			LogData base;
 			tuple_t data;
 		};
 		auto sptr = std::make_shared<entry_t>();
 		sptr->data = {format, args...};
-		sptr->base.writer = GenericLogWriter<Args...>::get_writer();
+		sptr->base.writer = GenericLogWriter<formatxform<Args>...>::get_writer();
 		_publish(level, channel, sptr);
+		return true;
 	}
 	// send any data to handlers
 	template<class T>
-	void write(int level, const char *channel, const T &obj) {
+	bool write(int level, const char *channel, const T &obj) {
 		struct entry_t {
 			LogData base;
 			T data;
@@ -566,6 +589,7 @@ public:
 		sptr->data = obj;
 		sptr->base.writer = nullptr;
 		_publish(level, channel, sptr);
+		return true;
 	}
 
 	inline const LogEvent *get_event(uint64_t seq) const {
