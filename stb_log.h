@@ -25,7 +25,7 @@
  int i = 255;
  float f = 3.1415926f;
  const char *c = "const chars";
- std::string s = "std::string";
+ std::tstring s = "std::tstring";
  
  log_write(LOG_INFO, "TEST", "current log sevirity level is [%d]", log_severity_level);
  log_debug("debug message: %d, %f, '%s', '%s'", i, f, c, s);
@@ -49,6 +49,16 @@
 #include <memory>
 #include <thread>
 #include <string>
+#include <tchar.h>
+namespace std {
+#ifdef _UNICODE
+#define to_tstring to_wstring
+typedef wstring tstring;
+#else
+typedef string tstring;
+#define to_tstring to_string
+#endif
+};
 
 #ifdef USE_NAMESPACE
 #ifndef STB_LOG_NAMESPACE
@@ -105,31 +115,31 @@ enum StbLogLevel {
 #ifdef LOG_SEVERITY_LEVEL
 // write critical log
 #if LOG_SEVERITY_LEVEL <= 50
-#define log_critical(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_CRITICAL, "CRITICAL", (fmt), ##__VA_ARGS__))
+#define log_critical(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_CRITICAL, _T("CRITICAL"), (fmt), ##__VA_ARGS__))
 #else
 #define log_critical(fmt,...)
 #endif
 // write error log
 #if LOG_SEVERITY_LEVEL <= 40
-#define log_error(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_ERROR, "ERROR", (fmt), ##__VA_ARGS__))
+#define log_error(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_ERROR, _T("ERROR"), (fmt), ##__VA_ARGS__))
 #else
 #define log_error(fmt,...)
 #endif
 // write warning log
 #if LOG_SEVERITY_LEVEL <= 30
-#define log_warning(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_WARNING, "WARNING", (fmt), ##__VA_ARGS__))
+#define log_warning(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_WARNING, _T("WARNING"), (fmt), ##__VA_ARGS__))
 #else
 #define log_warning(fmt,...)
 #endif
 // write info log
 #if LOG_SEVERITY_LEVEL <= 20
-#define log_info(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_INFO, "INFO", (fmt), ##__VA_ARGS__))
+#define log_info(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_INFO, _T("INFO"), (fmt), ##__VA_ARGS__))
 #else
 #define log_info(fmt,...)
 #endif
 // write debug log
 #if LOG_SEVERITY_LEVEL <= 10
-#define log_debug(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_DEBUG, "DEBUG", (fmt), ##__VA_ARGS__))
+#define log_debug(fmt, ...) (get_log_context()->logger && get_log_context()->logger->write(STB_LOG_LEVEL::LOG_DEBUG, _T("DEBUG"), (fmt), ##__VA_ARGS__))
 #else
 #define log_debug(fmt,...)
 #endif
@@ -174,7 +184,7 @@ void start_handler_thread(CLogHandler *handler, millisecond_t sleep_time = LOG_W
 CLogHandler* start_logger(bool async = true, millisecond_t sleep_time = LOG_WORKER_SLEEP_TIME);
 
 // start logging to file
-CLogHandler* start_file_logger(const char *log_file_path,
+CLogHandler* start_file_logger(const TCHAR *log_file_path,
                        bool append_mode = false,
                        int max_rotation = LOG_FILE_ROTATE_COUNT,
                        size_t rotate_size = LOG_FILE_ROTATE_SIZE,
@@ -220,7 +230,7 @@ struct formatxform
 template <>
 struct formatxform<char*>
 {
-	std::string s;
+	std::tstring s;
 };
 template <>
 struct formatxform<wchar_t*>
@@ -269,7 +279,7 @@ struct LogData
 {
 	int level;
 	LogEventTime time;
-	const char *channel;
+	const TCHAR *channel;
 	const LogWriter *writer;
 };
 	
@@ -307,31 +317,31 @@ struct GenericLogWriter {
 #pragma clang diagnostic ignored "-Wformat-security"
 
 	static void write_stdout(const LogData *log, void *context) {
-		using tuple_t = std::tuple<const char *, formatxform<Args>...>;
+		using tuple_t = std::tuple<const TCHAR *, formatxform<Args>...>;
 		constexpr size_t tuple_size = std::tuple_size<tuple_t>::value;
 		auto t = reinterpret_cast<const tuple_t *>((const char *) log + sizeof(LogData));
 		index_apply<tuple_size>([t](auto... Is) {
-			printf(to_printable(std::get<Is>(*t))...);
+			_tprintf(to_printable(std::get<Is>(*t))...);
 		});
 	}
 
 	static void write_file(const LogData *log, void *context) {
-		using tuple_t = std::tuple<const char *, formatxform<Args>...>;
+		using tuple_t = std::tuple<const TCHAR *, formatxform<Args>...>;
 		constexpr size_t tuple_size = std::tuple_size<tuple_t>::value;
 		auto t = reinterpret_cast<const tuple_t *>((const char *) log + sizeof(LogData));
 		auto c = (std::pair<FILE*, long>*)context;
 		index_apply<tuple_size>([t, c](auto... Is) {
-			c->second = fprintf(c->first, to_printable(std::get<Is>(*t))...);
+			c->second = _ftprintf(c->first, to_printable(std::get<Is>(*t))...);
 		});
 	}
 
 	static void write_string(const LogData *log, void *context) {
-		using tuple_t = std::tuple<const char *, formatxform<Args>...>;
+		using tuple_t = std::tuple<const TCHAR *, formatxform<Args>...>;
 		constexpr size_t tuple_size = std::tuple_size<tuple_t>::value;
 		auto t = reinterpret_cast<const tuple_t *>((const char *) log + sizeof(LogData));
-		auto c = (std::pair<char*, size_t>*)context;
+		auto c = (std::pair<TCHAR*, size_t>*)context;
 		index_apply<tuple_size>([t, c](auto... Is) {
-			c->second = snprintf(c->first, c->second, to_printable(std::get<Is>(*t))...);
+			c->second = _sntprintf(c->first, c->second, to_printable(std::get<Is>(*t))...);
 		});
 
 	}
@@ -356,37 +366,37 @@ class CLogTimeFormatter {
 public:
 	virtual ~CLogTimeFormatter() {}
 
-	virtual const char *format_time(LogEventTime t) = 0;
+	virtual const TCHAR *format_time(LogEventTime t) = 0;
 };
 
 // time string format: "HH:MM:SS", 8 char
 class CTimeFormatter : public CLogTimeFormatter {
 public:
-	virtual const char *format_time(LogEventTime t) override;
+	virtual const TCHAR *format_time(LogEventTime t) override;
 
 private:
 	static constexpr unsigned MAX_LENGTH = 9;
-	char m_buf[MAX_LENGTH];
+	TCHAR m_buf[MAX_LENGTH];
 };
 
 // time string format: "HH:MM:SS.xxx", 12 char
 class CMsTimeFormatter : public CLogTimeFormatter {
 public:
-	virtual const char *format_time(LogEventTime t) override;
+	virtual const TCHAR *format_time(LogEventTime t) override;
 
 private:
 	static constexpr unsigned MAX_LENGTH = 13;
-	char m_buf[MAX_LENGTH];
+	TCHAR m_buf[MAX_LENGTH];
 };
 
 // time string format: "YYYY-MM-DD HH:MM:SS", 19 char
 class CDateTimeFormatter : public CLogTimeFormatter {
 public:
-	virtual const char *format_time(LogEventTime t) override;
+	virtual const TCHAR *format_time(LogEventTime t) override;
 
 private:
 	static constexpr unsigned MAX_LENGTH = 20;
-	char m_buf[MAX_LENGTH];
+	TCHAR m_buf[MAX_LENGTH];
 };
 
 class CLogHandler {
@@ -456,22 +466,22 @@ public:
 	static constexpr char reversed_seperator = '\\';
 #endif
 
-	static void normpath(std::string &path);
+	static void normpath(std::tstring &path);
 
-	static void split(const std::string &path, std::string &dir, std::string &file_name);
+	static void split(const std::tstring &path, std::tstring &dir, std::tstring &file_name);
 
-	static void split_ext(const std::string &file_name, std::string &base_name, std::string &ext);
+	static void split_ext(const std::tstring &file_name, std::tstring &base_name, std::tstring &ext);
 
-	static bool isdir(const std::string &path);
+	static bool isdir(const std::tstring &path);
 
-	static bool isfile(const std::string &path);
+	static bool isfile(const std::tstring &path);
 
-	static bool makedirs(const std::string &path);
+	static bool makedirs(const std::tstring &path);
 };
 
 class CLogFile : public CLogHandler {
 public:
-	CLogFile(const char *filepath, bool append = false, int rotate_count = LOG_FILE_ROTATE_COUNT,
+	CLogFile(const TCHAR *filepath, bool append = false, int rotate_count = LOG_FILE_ROTATE_COUNT,
 	         size_t rotate_size = LOG_FILE_ROTATE_SIZE);
 
 	virtual ~CLogFile();
@@ -484,27 +494,27 @@ public:
 		return m_hfile != nullptr;
 	}
 
-	inline const std::string &get_directory() const {
+	inline const std::tstring &get_directory() const {
 		return m_logpath;
 	}
 
-	inline const std::string &get_base_name() const {
+	inline const std::tstring &get_base_name() const {
 		return m_logname;
 	}
 
-	inline const std::string &get_file_path() const {
+	inline const std::tstring &get_file_path() const {
 		return m_curfile;
 	}
 
 	void rotate();
 
 private:
-	static FILE *_share_open(const char *path, const char *mode);
+	static FILE *_share_open(const TCHAR *path, const TCHAR *mode);
 
 	FILE *m_hfile;
-	std::string m_logpath;
-	std::string m_logname;
-	std::string m_curfile;
+	std::tstring m_logpath;
+	std::tstring m_logname;
+	std::tstring m_curfile;
 	size_t m_cur_size;
 	size_t m_rotate_size;
 	int m_rotate_count;
@@ -566,8 +576,8 @@ public:
 	void release_handlers();
 	// send log message to handlers
 	template<class... Args>
-	bool write(int level, const char *channel, const char *format, Args... args) {
-		using tuple_t = std::tuple<const char *, formatxform<Args>...>;
+	bool write(int level, const TCHAR *channel, const TCHAR *format, Args... args) {
+		using tuple_t = std::tuple<const TCHAR *, formatxform<Args>...>;
 		struct entry_t  {
 			LogData base;
 			tuple_t data;
@@ -580,7 +590,7 @@ public:
 	}
 	// send any data to handlers
 	template<class T>
-	bool write(int level, const char *channel, const T &obj) {
+	bool write(int level, const TCHAR *channel, const T &obj) {
 		struct entry_t {
 			LogData base;
 			T data;
@@ -614,7 +624,7 @@ public:
 	}
 private:
 	uint64_t _claim(uint64_t count);
-	void _publish(int level, const char *channel, std::shared_ptr<void> sptr);
+	void _publish(int level, const TCHAR *channel, std::shared_ptr<void> sptr);
 
 	LogEvent *m_event_queue;
 	size_t m_size_mask;
@@ -688,7 +698,7 @@ CLogHandler* start_logger(bool async, millisecond_t sleep_time) {
 	return handler;
 }
 
-CLogHandler* start_file_logger(const char *log_file_path, bool append_mode, int max_rotation,
+CLogHandler* start_file_logger(const TCHAR *log_file_path, bool append_mode, int max_rotation,
 					   size_t rotate_size, bool async, millisecond_t sleep_time) {
 	CLogFile *handler = new CLogFile(log_file_path, append_mode, max_rotation, rotate_size);
 	handler->set_time_formatter(std::make_unique<CDateTimeFormatter>());
@@ -833,7 +843,7 @@ uint64_t CLogger::_claim(uint64_t count) {
 	return request_seq;
 }
 
-void CLogger::_publish(int level, const char *channel, std::shared_ptr<void> sptr) {
+void CLogger::_publish(int level, const TCHAR *channel, std::shared_ptr<void> sptr) {
 	LogData *base = (LogData*)sptr.get();
 	if(level>=m_activeLevel) {
 		base->level = level;
@@ -943,35 +953,35 @@ void CLogHandler::flush()
 #define LOCALTIME(datetime, timestamp) localtime_r(&(timestamp), &(datetime))
 #endif
 
-const char *CTimeFormatter::format_time(LogEventTime t) {
+const TCHAR *CTimeFormatter::format_time(LogEventTime t) {
 	time_t timestamp = std::chrono::system_clock::to_time_t(t);
 	tm datetime;
 	LOCALTIME(datetime, timestamp);
-	if (strftime(m_buf, MAX_LENGTH, "%T", &datetime) == 0) {
+	if (_tcsftime(m_buf, MAX_LENGTH, _T("%T"), &datetime) == 0) {
 		m_buf[MAX_LENGTH - 1] = 0;
 	}
 	return m_buf;
 }
 
-const char *CMsTimeFormatter::format_time(LogEventTime t) {
+const TCHAR *CMsTimeFormatter::format_time(LogEventTime t) {
 	time_t timestamp = std::chrono::system_clock::to_time_t(t);
 	tm datetime;
 	LOCALTIME(datetime, timestamp);
-	auto len = strftime(m_buf, MAX_LENGTH, "%T", &datetime);
+	auto len = _tcsftime(m_buf, MAX_LENGTH, _T("%T"), &datetime);
 	if (len == 0) {
 		m_buf[MAX_LENGTH - 1] = 0;
 		return m_buf;
 	}
 	auto msec = std::chrono::duration_cast<std::chrono::milliseconds>(t.time_since_epoch());
-	sprintf(m_buf + len, ".%03d", int(msec.count() % 1000));
+	_stprintf(m_buf + len, _T(".%03d"), int(msec.count() % 1000));
 	return m_buf;
 }
 
-const char *CDateTimeFormatter::format_time(LogEventTime t) {
+const TCHAR *CDateTimeFormatter::format_time(LogEventTime t) {
 	time_t timestamp = std::chrono::system_clock::to_time_t(t);
 	tm datetime;
 	LOCALTIME(datetime, timestamp);
-	if (strftime(m_buf, MAX_LENGTH, "%F %T", &datetime) == 0) {
+	if (_tcsftime(m_buf, MAX_LENGTH, _T("%F %T"), &datetime) == 0) {
 		m_buf[MAX_LENGTH - 1] = 0;
 	}
 	return m_buf;
@@ -983,76 +993,76 @@ const char *CDateTimeFormatter::format_time(LogEventTime t) {
 
 void CLogStdout::process_event(const LogData *log) {
 	if (m_formatter) {
-		const char *stime = m_formatter->format_time(log->time);
-		printf("[%s] ", stime);
+		const TCHAR *stime = m_formatter->format_time(log->time);
+		_tprintf(_T("[%s] "), stime);
 	}
 	if (log->channel[0] != 0) {
-		printf("[%s] ", log->channel);
+		_tprintf(_T("[%s] "), log->channel);
 	}
 	log->writer[LOG_WRITER_STDOUT](log, nullptr);
-	printf("\n");
+	_tprintf(_T("\n"));
 }
 
 // --------------------------------
 // File system implementation
 // --------------------------------
 
-void CLogFileSystem::normpath(std::string &path) {
+void CLogFileSystem::normpath(std::tstring &path) {
 	std::replace(path.begin(), path.end(), char(reversed_seperator), char(seperator));
 }
 
-void CLogFileSystem::split(const std::string &path, std::string &dir, std::string &file_name) {
+void CLogFileSystem::split(const std::tstring &path, std::tstring &dir, std::tstring &file_name) {
 	size_t pos = path.rfind(seperator);
-	if (pos != std::string::npos) {
+	if (pos != std::tstring::npos) {
 		pos += 1;
 		dir = path.substr(0, pos);
 		file_name = path.substr(pos);
 	} else {
-		dir = "";
+		dir = _T("");
 		file_name = path;
 	}
 }
 
-void CLogFileSystem::split_ext(const std::string &file_name, std::string &base_name, std::string &ext) {
+void CLogFileSystem::split_ext(const std::tstring &file_name, std::tstring &base_name, std::tstring &ext) {
 	size_t pos = file_name.rfind('.');
-	if (pos != std::string::npos) {
+	if (pos != std::tstring::npos) {
 		base_name = file_name.substr(0, pos);
 		ext = file_name.substr(pos);
 	} else {
 		base_name = file_name;
-		ext = "";
+		ext = _T("");
 	}
 }
 
-bool CLogFileSystem::isdir(const std::string &path) {
-	struct stat path_st;
-	return stat(path.c_str(), &path_st) == 0 && path_st.st_mode & S_IFDIR;
+bool CLogFileSystem::isdir(const std::tstring &path) {
+	struct _stat path_st;
+	return _tstat(path.c_str(), &path_st) == 0 && path_st.st_mode & S_IFDIR;
 }
 
-bool CLogFileSystem::isfile(const std::string &path) {
-	struct stat path_st;
-	return stat(path.c_str(), &path_st) == 0 && path_st.st_mode & S_IFREG;
+bool CLogFileSystem::isfile(const std::tstring &path) {
+	struct _stat path_st;
+	return _tstat(path.c_str(), &path_st) == 0 && path_st.st_mode & S_IFREG;
 }
 
-bool CLogFileSystem::makedirs(const std::string &path) {
-	std::string cmd = "mkdir ";
+bool CLogFileSystem::makedirs(const std::tstring &path) {
+	std::tstring cmd = _T("mkdir ");
 	cmd += path;
-	return std::system(cmd.c_str()) == 0;
+	return _tsystem(cmd.c_str()) == 0;
 }
 
 // --------------------------------
 // File logger implementation
 // --------------------------------
 
-FILE *CLogFile::_share_open(const char *path, const char *mode) {
+FILE *CLogFile::_share_open(const TCHAR *path, const TCHAR *mode) {
 #if defined(_WIN32) || defined(_WIN64)
-	return _fsopen(path, mode, _SH_DENYWR);
+	return _tfsopen(path, mode, _SH_DENYWR);
 #else
 	return fopen(path, mode);
 #endif
 }
 
-CLogFile::CLogFile(const char *filepath, bool append, int rotate_count, size_t rotate_size)
+CLogFile::CLogFile(const TCHAR *filepath, bool append, int rotate_count, size_t rotate_size)
 	: m_hfile(nullptr)
 	, m_curfile(filepath)
 	, m_cur_size(0)
@@ -1062,15 +1072,15 @@ CLogFile::CLogFile(const char *filepath, bool append, int rotate_count, size_t r
 	CLogFileSystem::normpath(m_curfile);
 	CLogFileSystem::split(m_curfile, m_logpath, m_logname);
 	if (!CLogFileSystem::isdir(m_logpath) && !CLogFileSystem::makedirs(m_logpath)) {
-		printf("Fail to create log director [%s]\n", m_logpath.c_str());
-		m_logpath = "";
+		_tprintf(_T("Fail to create log director [%s]\n"), m_logpath.c_str());
+		m_logpath = _T("");
 	}
 	if (append)
-		m_hfile = _share_open(m_curfile.c_str(), "a");
+		m_hfile = _share_open(m_curfile.c_str(), _T("a"));
 	else if (CLogFileSystem::isfile(m_curfile))
 		rotate();
 	else
-		m_hfile = _share_open(m_curfile.c_str(), "w");
+		m_hfile = _share_open(m_curfile.c_str(), _T("w"));
 }
 
 CLogFile::~CLogFile() {
@@ -1088,16 +1098,16 @@ void CLogFile::flush()
 
 void CLogFile::process_event(const LogData *log) {
 	if (m_formatter) {
-		const char *stime = m_formatter->format_time(log->time);
-		m_cur_size += fprintf(m_hfile, "[%s] ", stime);
+		const TCHAR *stime = m_formatter->format_time(log->time);
+		m_cur_size += _ftprintf(m_hfile, _T("[%s] "), stime);
 	}
 	if (log->channel[0] != 0) {
-		m_cur_size += fprintf(m_hfile, "[%s] ", log->channel);
+		m_cur_size += _ftprintf(m_hfile, _T("[%s] "), log->channel);
 	}
 	std::pair<FILE*, long> context{m_hfile, 0};
 	log->writer[LOG_WRITER_FILE](log, &context);
 	m_cur_size += context.second + 1;
-	fprintf(m_hfile, "\n");
+	_ftprintf(m_hfile, _T("\n"));
 	if (m_cur_size >= m_rotate_size) {
 		rotate();
 	}
@@ -1117,25 +1127,25 @@ void CLogFile::rotate() {
 		fclose(m_hfile);
 		m_hfile = 0;
 	}
-	std::string logfile, ext;
+	std::tstring logfile, ext;
 	CLogFileSystem::split_ext(m_curfile, logfile, ext);
-	std::string last_file = logfile, cur_file;
-	last_file += std::to_string(m_rotate_count);
+	std::tstring last_file = logfile, cur_file;
+	last_file += std::to_tstring(m_rotate_count);
 	last_file += ext;
 	if (CLogFileSystem::isfile(last_file)) {
-		if (std::remove(last_file.c_str()) != 0)
+		if (_tremove(last_file.c_str()) != 0)
 			return;
 	}
 	for (int i = m_rotate_count - 1; i >= 0; --i) {
 		cur_file = logfile;
-		cur_file += std::to_string(i);
+		cur_file += std::to_tstring(i);
 		cur_file += ext;
 		if (CLogFileSystem::isfile(cur_file))
-			std::rename(cur_file.c_str(), last_file.c_str());
+			_trename(cur_file.c_str(), last_file.c_str());
 		last_file = cur_file;
 	}
-	std::rename(m_curfile.c_str(), last_file.c_str());
-	m_hfile = _share_open(m_curfile.c_str(), "w");
+	_trename(m_curfile.c_str(), last_file.c_str());
+	m_hfile = _share_open(m_curfile.c_str(), _T("w"));
 }
 
 // --------------------------------
