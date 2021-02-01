@@ -329,9 +329,15 @@ struct GenericLogWriter {
 		using tuple_t = std::tuple<const char *, formatxform<Args>...>;
 		constexpr size_t tuple_size = std::tuple_size<tuple_t>::value;
 		auto t = reinterpret_cast<const tuple_t *>((const char *) log + sizeof(LogData));
-		auto c = (std::pair<char*, size_t>*)context;
+		auto c = (std::tuple<char*, size_t,ULONG_PTR>*)context;
 		index_apply<tuple_size>([t, c](auto... Is) {
-			c->second = snprintf(c->first, c->second, to_printable(std::get<Is>(*t))...);
+			if (std::get<0>(*c) == nullptr)
+			{
+				std::get<1>(*c) = _scprintf(to_printable(std::get<Is>(*t))...);
+			}
+			else {
+				std::get<1>(*c) = snprintf(std::get<0>(*c), std::get<1>(*c), to_printable(std::get<Is>(*t))...);
+			}
 		});
 
 	}
@@ -518,18 +524,21 @@ public:
 	virtual void process_event(const LogData *log) override;
 	// get C string
 	inline const char *str() const {
-		return m_str.first;
+		return std::get<0>(m_str);
 	}
 	// get string size
 	inline size_t size() const {
-		return m_str.second;
+		return std::get<1>(m_str);
+	}
+	inline ULONG_PTR context() const {
+		return std::get<2>(m_str);
 	}
 protected:
-	virtual std::pair<char*, size_t> getstr(size_t required_size) = 0;
-	virtual void setstr(size_t size) {}
+	virtual std::tuple<char*, size_t,ULONG_PTR> getstr(size_t required_size) = 0;
+	virtual void setstr(size_t size,ULONG_PTR context) {}
 	virtual void handle_error(const LogData *log);
 	
-	std::pair<char*, size_t> m_str;
+	std::tuple<char*, size_t, ULONG_PTR> m_str;
 };
 	
 class CLogString : public CCustomLog
@@ -539,7 +548,7 @@ public:
 	virtual ~CLogString();
 
 protected:
-	virtual std::pair<char*, size_t> getstr(size_t required_size) override;
+	virtual std::tuple<char*, size_t, ULONG_PTR> getstr(size_t required_size) override;
 
 private:
 	char *m_buf;
@@ -1143,7 +1152,7 @@ void CLogFile::rotate() {
 // --------------------------------
 
 CCustomLog::CCustomLog()
-	: m_str(nullptr, 0)
+	: m_str(nullptr, 0,0)
 {
 	
 }
@@ -1151,34 +1160,53 @@ CCustomLog::CCustomLog()
 void CCustomLog::process_event(const LogData *log)
 {
 	size_t capacity;
-	m_str = getstr(1);
-	if(!m_str.first) {
+	
+	std::tuple<char*, size_t, ULONG_PTR> strTmp(nullptr,0,0);
+	
+	log->writer[LOG_WRITER_STRING](log, &strTmp);
+	if(std::get<1>(strTmp) < 0) {
 		goto ERROR_EXIT;
 	}
-	capacity = m_str.second;
-	log->writer[LOG_WRITER_STRING](log, &m_str);
-	if(m_str.second < 0) {
-		goto ERROR_EXIT;
+	if (m_formatter) {
+		const char* stime = m_formatter->format_time(log->time);
+		std::get<1>(strTmp) += snprintf(nullptr,0,"[%s] ", stime);
 	}
-	if(m_str.second >= capacity) {
-		// not enough size, try resize then write again
-		m_str = getstr(m_str.second + 1);
-		if(!m_str.first) {
+	if (log->channel[0] != 0) {
+		std::get<1>(strTmp) += snprintf(nullptr,0,"[%s] ", log->channel);
+	}
+	//if(std::get<1>(m_str) >= capacity) 
+	{
+		
+		m_str = getstr(std::get<1>(strTmp) + 1);
+		if(!std::get<0>(m_str)) {
 			goto ERROR_EXIT;
 		}
-		capacity = m_str.second;
-		log->writer[LOG_WRITER_STRING](log, &m_str);
-		if(m_str.second < 0) {
+		capacity = std::get<1>(m_str);
+		int offset = 0;
+		if (m_formatter) {
+			const char* stime = m_formatter->format_time(log->time);
+			offset+= snprintf(std::get<0>(m_str)+offset, capacity-offset, "[%s] ", stime);
+		}
+		if (log->channel[0] != 0) {
+			offset += snprintf(std::get<0>(m_str) + offset, capacity - offset, "[%s] ", log->channel);
+		}
+		
+		std::get<0>(strTmp) = std::get<0>(m_str) + offset;
+		std::get<1>(strTmp) = std::get<1>(m_str) - offset;
+		log->writer[LOG_WRITER_STRING](log, &strTmp);
+		if(std::get<1>(strTmp)< 0) {
 			goto ERROR_EXIT;
 		}
+
 		// if still not enough, strip the string
-		if(m_str.second >= capacity) {
-			m_str.second = capacity - 1;
-			m_str.first[m_str.second] = 0;
-		}
+		//if(std::get<1>(m_str) >= capacity) {
+		//	std::get<1>(m_str) = capacity - 1;
+		//	std::get<0>(m_str)[std::get<1>(m_str)] = 0;
+		//}
+		//std::get<1>(m_str) += std::get<1>(strTmp);
 	}
 	// done with string buffer
-	setstr(m_str.second + 1);
+	setstr(std::get<1>(m_str) + 1, std::get<2>(m_str));
 	return;
 	
 ERROR_EXIT:
@@ -1212,7 +1240,7 @@ CLogString::~CLogString()
 	}
 }
 
-std::pair<char*, size_t> CLogString::getstr(size_t required_size)
+std::tuple<char*, size_t, ULONG_PTR> CLogString::getstr(size_t required_size)
 {
 	if(required_size > m_capacity) {
 		size_t size = m_capacity;
@@ -1226,7 +1254,7 @@ std::pair<char*, size_t> CLogString::getstr(size_t required_size)
 		m_buf = new char[size];
 		m_capacity = size;
 	}
-	return {m_buf, m_capacity};
+	return {m_buf, m_capacity,0};
 }
 
 #ifdef USE_NAMESPACE
