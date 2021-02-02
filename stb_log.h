@@ -430,8 +430,8 @@ enum ELogWriterType
 
 template<typename... Args>
 struct GenericLogWriter {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wformat-security"
+//#pragma clang diagnostic push
+//#pragma clang diagnostic ignored "-Wformat-security"
 
 	static void write_stdout(const LogData *log, void *context) {
 		using tuple_t = std::tuple<const TCHAR *, Args...>;
@@ -470,7 +470,7 @@ struct GenericLogWriter {
 
 	}
 	
-#pragma clang diagnostic pop
+//#pragma clang diagnostic pop
 
 	static const LogWriter* get_writer() {
 		static const LogWriter s_writer_table[LOG_WRITER_COUNT] = {
