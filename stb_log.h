@@ -794,6 +794,8 @@ void start_handler_thread(CLogHandler *handler, millisecond_t sleep_time) {
 	LogContext *lc = add_log_handler(handler);
 	std::chrono::milliseconds msec(sleep_time);
 	lc->thread_pool.emplace_back(std::make_unique<std::thread>([handler, msec] {
+		void SetThreadName( const char* threadName);
+		SetThreadName("stb_log");
 		while (!handler->is_closed()) {
 			handler->process();
 			std::this_thread::sleep_for(msec);
